@@ -31,8 +31,13 @@ coin_data = np.genfromtxt(args.file, delimiter=args.delimiter)
 prices = np.array(coin_data[:, 1])
 print str(len(prices)) + " price points read from data file "
 
+print 'Price start time: ' + str(coin_data[0, 0])
+print 'Price end time: ' + str(coin_data[len(coin_data)-1, 0])
+print 'Price window (hours): ' + str((coin_data[len(coin_data)-1,0] - coin_data[0,0]) / (60*60))
+
 p1 = np.array(prices[0:len(prices) / 3])
 p2 = np.array(prices[len(p1):2 * len(p1)])
+p3 = np.array(prices[2 * len(p1): len(prices)])
 
 # TODO: parameterize the rest of the algorithm, so that these lengths are not hardcoded into bunch of logic
 timeseries_lengths = [180, 360, 720]
@@ -108,7 +113,7 @@ print 'Done with Sample Entropy...'
 def bsn_distance(v1, v2):
     # TODO: best choice of c?
     #c = -1 / 4
-    c = -1
+    c = -0.15
     return\
         np.exp(
             np.multiply(c,
@@ -128,7 +133,6 @@ def bayesian(price_slice, price_clusters):
         numerator += np.multiply(distance, expected_price_d)
         denominator += distance
     result = np.divide(numerator, denominator)
-#    print 'bayesian result: ' + str(result)
     return result
 
 print 'Bayesion regression'
@@ -145,7 +149,7 @@ for i in range(0, len(p2) - 721):
 
 bayesian_reg_end = time.time()
 print 'End    : ' + str(bayesian_reg_end)
-print 'Elapsed: ' + str(bayesian_reg_end - bayesian_reg_end)
+print 'Elapsed: ' + str(bayesian_reg_end - bayesian_reg_start)
 print 'Done with Bayesian Regression...'
 
 print 'Differential Evolution fit'
@@ -155,7 +159,7 @@ print 'Started: ' + str(de_start)
 # TODO: add one more bound when adding r
 bounds = [[0, 1], [0, 1], [0, 1], [0, 1]]
 # TODO: verify optional params on differential_evolution
-expectation_weights = differential_evolution(obj_func, bounds, args=(regressorX, regressorY))
+expectation_weights = differential_evolution(obj_func, bounds, args=(regressorX, regressorY), popsize=50, maxiter=15000)
 
 de_end = time.time()
 print 'End    : ' + str(de_end)
@@ -164,5 +168,57 @@ print 'Expectation Weights (thetas): ' + str(expectation_weights)
 print 'Done with Differential Evolution...'
 
 # TODO: trade testing
+def trade(clusters, weights, prices):
+    t = 0.1
+    position = 0
+    error = 0
+    abs_movement_total = 0
+    sales = 0
+    winning_sales = 0
+    purchase_price = 0
+    profit = 0
+    for i in range(720, len(prices)-1):
+       prices180 = zscore(prices[i-180:i])
+       prices360 = zscore(prices[i-360:i])
+       prices720 = zscore(prices[i-720:i])
+       dp1 = bayesian(prices180, clusters[0])
+       dp2 = bayesian(prices360, clusters[1])
+       dp3 = bayesian(prices720, clusters[2])
+       dp = weights[0] + weights[1] * dp1 + weights[2] * dp2 + weights[3] * dp3
+       actual_dp = prices[i+1] - prices[i]
+       if(i % 1000 == 0):
+           print 'Actual dp: ' + str(actual_dp) + ' predicted dp: ' + str(dp)
+       error = error + abs(actual_dp - dp)
+       abs_movement_total = abs_movement_total + abs(actual_dp)
+       if((dp > t) & (position == 0)):
+           position = 1
+           purchase_price = prices[i]
+       if((dp < -t) & (position == 1)):
+           position = 0
+           sales = sales + 1
+           sale_profit = prices[i] - purchase_price
+           profit = profit + sale_profit
+           if (sale_profit > 0):
+               winning_sales = winning_sales + 1
+    print 'Trading finished'
+    print 'Results:'
+    print 'Error: ' + str(error) + ' Absolute price movement: ' + str(abs_movement_total)
+    print 'Profit:  ' + str(profit)
+    print 'Winning Sales: ' + str(winning_sales) + ' Sales: ' + str(sales) + ' Ratio: ' + str(winning_sales / sales)
 
+#TODO: return stuff
+    return
+
+print 'Trade Simulation'
+trading_start = time.time()
+print 'Started: ' + str(trading_start)
+
+trade(top_ent_clusters, expectation_weights.x, p3)
+
+trading_end = time.time()
+print 'End    : ' + str(trading_end)
+print 'Elapsed: ' + str(trading_end - trading_start)
+print 'Done with Trade Simulation...'
+
+print 'Finished'
 # TODO: graph some things???
